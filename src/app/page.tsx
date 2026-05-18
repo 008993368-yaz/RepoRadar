@@ -1,4 +1,5 @@
-import { Button, Card, CardDescription, CardHeader, CardTitle, Input } from "@/components/ui";
+import { RepoInputForm } from "@/components/repo-input-form";
+import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui";
 
 export default function Home() {
   return (
@@ -16,15 +17,12 @@ export default function Home() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Repository analysis entry point</CardTitle>
+          <CardTitle>Analyze a public repository</CardTitle>
           <CardDescription>
-            Workstream B will connect this shell to validation and the analysis API.
+            Paste a GitHub URL or owner/repo shorthand to start the onboarding analysis.
           </CardDescription>
         </CardHeader>
-        <div className="flex flex-col gap-3 sm:flex-row">
-          <Input aria-label="GitHub repository URL" placeholder="github.com/vercel/next.js" />
-          <Button className="sm:w-40">Analyze</Button>
-        </div>
+        <RepoInputForm />
       </Card>
 
       <div className="grid gap-4 md:grid-cols-3">
