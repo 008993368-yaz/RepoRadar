@@ -1,5 +1,11 @@
 import { createApiError, createApiSuccess } from "@/lib/api-response";
 import { GitHubRepoInputError, parseGitHubRepoInput } from "@/lib/github-url";
+import {
+  AppDatabaseError,
+  createAnalysisJob,
+  getRepoDatabase,
+  upsertRepository,
+} from "@/lib/repo-database";
 
 type AnalyzeRequestBody = {
   repoUrl?: unknown;
@@ -23,18 +29,28 @@ export async function POST(request: Request) {
     }
 
     const repo = parseGitHubRepoInput(body.repoUrl);
-    const repoId = `${repo.owner}-${repo.repo}`;
+    const database = getRepoDatabase();
+    const repository = await upsertRepository(database, {
+      owner: repo.owner,
+      name: repo.repo,
+      url: repo.normalizedUrl,
+    });
+    const job = await createAnalysisJob(database, repository.id);
 
     return Response.json(
       createApiSuccess({
-        repoId,
-        jobId: `stub-job-${repoId}`,
-        status: "queued",
+        repoId: repository.id,
+        jobId: job.id,
+        status: job.status,
       }),
     );
   } catch (error) {
     if (error instanceof GitHubRepoInputError) {
       return Response.json(createApiError(error.code, error.message), { status: 400 });
+    }
+
+    if (error instanceof AppDatabaseError) {
+      return Response.json(createApiError(error.code, error.message), { status: 500 });
     }
 
     throw error;
