@@ -234,6 +234,15 @@ export async function findRepositoryByOwnerName(
   );
 }
 
+export async function findRepositoryById(
+  database: RepoDatabase,
+  repoId: string,
+): Promise<RepoRow | null> {
+  return executeMaybeSingle<RepoRow>(
+    database.client.from<RepoRow>("repos").select("*").eq("id", repoId).maybeSingle(),
+  );
+}
+
 export async function createAnalysisJob(
   database: RepoDatabase,
   repoId: string,
@@ -257,6 +266,21 @@ export async function findLatestCompletedAnalysisJob(
       .select("*")
       .eq("repo_id", repoId)
       .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  );
+}
+
+export async function findLatestAnalysisJob(
+  database: RepoDatabase,
+  repoId: string,
+): Promise<AnalysisJobRow | null> {
+  return executeMaybeSingle<AnalysisJobRow>(
+    database.client
+      .from<AnalysisJobRow>("analysis_jobs")
+      .select("*")
+      .eq("repo_id", repoId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle(),
@@ -333,6 +357,15 @@ export async function insertGraphEdges(
 ): Promise<GraphEdgeRow[]> {
   return executeList<GraphEdgeRow>(
     database.client.from<GraphEdgeRow[]>("graph_edges").insert(edges).select("*"),
+  );
+}
+
+export async function listGraphEdges(
+  database: RepoDatabase,
+  repoId: string,
+): Promise<GraphEdgeRow[]> {
+  return executeList<GraphEdgeRow>(
+    database.client.from<GraphEdgeRow[]>("graph_edges").select("*").eq("repo_id", repoId),
   );
 }
 
