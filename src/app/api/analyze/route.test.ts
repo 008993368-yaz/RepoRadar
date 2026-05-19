@@ -5,15 +5,19 @@ import { AppDatabaseError } from "@/lib/repo-database";
 
 const {
   createAnalysisJobMock,
+  fetchFileTreeMock,
   fetchReadmeMock,
   fetchRepositoryMock,
   getRepoDatabaseMock,
+  upsertFilesMock,
   upsertRepositoryMock,
 } = vi.hoisted(() => ({
   createAnalysisJobMock: vi.fn(),
+  fetchFileTreeMock: vi.fn(),
   fetchReadmeMock: vi.fn(),
   fetchRepositoryMock: vi.fn(),
   getRepoDatabaseMock: vi.fn(),
+  upsertFilesMock: vi.fn(),
   upsertRepositoryMock: vi.fn(),
 }));
 
@@ -27,6 +31,7 @@ vi.mock("@/lib/github-client", () => ({
     }
   },
   createGitHubClient: () => ({
+    fetchFileTree: fetchFileTreeMock,
     fetchReadme: fetchReadmeMock,
     fetchRepository: fetchRepositoryMock,
   }),
@@ -43,6 +48,7 @@ vi.mock("@/lib/repo-database", () => ({
   },
   createAnalysisJob: createAnalysisJobMock,
   getRepoDatabase: getRepoDatabaseMock,
+  upsertFiles: upsertFilesMock,
   upsertRepository: upsertRepositoryMock,
 }));
 
@@ -51,9 +57,11 @@ import { POST } from "./route";
 describe("POST /api/analyze", () => {
   beforeEach(() => {
     createAnalysisJobMock.mockReset();
+    fetchFileTreeMock.mockReset();
     fetchReadmeMock.mockReset();
     fetchRepositoryMock.mockReset();
     getRepoDatabaseMock.mockReset();
+    upsertFilesMock.mockReset();
     upsertRepositoryMock.mockReset();
     fetchRepositoryMock.mockResolvedValue({
       owner: "vercel",
@@ -67,8 +75,29 @@ describe("POST /api/analyze", () => {
       license: "MIT",
     });
     fetchReadmeMock.mockResolvedValue("# next.js");
+    fetchFileTreeMock.mockResolvedValue([
+      {
+        path: "README.md",
+        sha: "sha-readme",
+        size: 500,
+        url: "https://api.github.test/blob/readme",
+      },
+      {
+        path: "src/app/page.tsx",
+        sha: "sha-page",
+        size: 1200,
+        url: "https://api.github.test/blob/page",
+      },
+      {
+        path: "public/logo.png",
+        sha: "sha-logo",
+        size: 900,
+        url: "https://api.github.test/blob/logo",
+      },
+    ]);
     getRepoDatabaseMock.mockReturnValue({ client: "supabase" });
     upsertRepositoryMock.mockResolvedValue({ id: "repo-uuid" });
+    upsertFilesMock.mockResolvedValue([]);
     createAnalysisJobMock.mockResolvedValue({ id: "job-uuid", status: "queued" });
   });
 
@@ -91,6 +120,7 @@ describe("POST /api/analyze", () => {
     expect(response.status).toBe(200);
     expect(fetchRepositoryMock).toHaveBeenCalledWith("vercel", "next.js");
     expect(fetchReadmeMock).toHaveBeenCalledWith("vercel", "next.js");
+    expect(fetchFileTreeMock).toHaveBeenCalledWith("vercel", "next.js", "canary");
     expect(upsertRepositoryMock).toHaveBeenCalledWith(
       { client: "supabase" },
       {
@@ -105,6 +135,30 @@ describe("POST /api/analyze", () => {
         license: "MIT",
         readme: "# next.js",
       },
+    );
+    expect(fetchRepositoryMock.mock.invocationCallOrder[0]).toBeLessThan(
+      fetchFileTreeMock.mock.invocationCallOrder[0],
+    );
+    expect(upsertFilesMock).toHaveBeenCalledWith(
+      { client: "supabase" },
+      [
+        {
+          repo_id: "repo-uuid",
+          path: "README.md",
+          language: "Markdown",
+          size_bytes: 500,
+          content_hash: null,
+          role: "readme",
+        },
+        {
+          repo_id: "repo-uuid",
+          path: "src/app/page.tsx",
+          language: "TypeScript React",
+          size_bytes: 1200,
+          content_hash: null,
+          role: "entrypoint",
+        },
+      ],
     );
     expect(createAnalysisJobMock).toHaveBeenCalledWith({ client: "supabase" }, "repo-uuid");
   });
