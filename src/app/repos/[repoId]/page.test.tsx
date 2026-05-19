@@ -121,6 +121,7 @@ describe("RepoDashboardPage", () => {
     expect(screen.getByText("Main application entry point.")).toBeInTheDocument();
     expect(screen.getByText("Document local setup")).toBeInTheDocument();
     expect(screen.getByText("Start with README.md")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Repository dependency map" })).toBeInTheDocument();
   });
 
   it("shows an in-progress state when analysis has not produced output yet", async () => {
