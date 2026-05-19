@@ -15,6 +15,7 @@ export type RepoRow = {
   primary_language: string | null;
   stars: number | null;
   forks: number | null;
+  license: string | null;
   readme: string | null;
   created_at: string;
   updated_at: string;
@@ -29,6 +30,7 @@ export type RepoInsert = {
   primary_language?: string | null;
   stars?: number | null;
   forks?: number | null;
+  license?: string | null;
   readme?: string | null;
 };
 
