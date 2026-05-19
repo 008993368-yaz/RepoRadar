@@ -1,10 +1,12 @@
 import { createApiError, createApiSuccess } from "@/lib/api-response";
+import { selectImportantFiles } from "@/lib/file-selection";
 import { createGitHubClient, GitHubApiError, type GitHubApiErrorCode } from "@/lib/github-client";
 import { GitHubRepoInputError, parseGitHubRepoInput } from "@/lib/github-url";
 import {
   AppDatabaseError,
   createAnalysisJob,
   getRepoDatabase,
+  upsertFiles,
   upsertRepository,
 } from "@/lib/repo-database";
 
@@ -33,6 +35,8 @@ export async function POST(request: Request) {
     const github = createGitHubClient();
     const githubRepository = await github.fetchRepository(repo.owner, repo.repo);
     const readme = await github.fetchReadme(repo.owner, repo.repo);
+    const tree = await github.fetchFileTree(repo.owner, repo.repo, githubRepository.defaultBranch);
+    const selectedFiles = selectImportantFiles(tree);
     const database = getRepoDatabase();
     const repository = await upsertRepository(database, {
       owner: githubRepository.owner,
@@ -46,6 +50,17 @@ export async function POST(request: Request) {
       license: githubRepository.license,
       readme,
     });
+    await upsertFiles(
+      database,
+      selectedFiles.map((file) => ({
+        repo_id: repository.id,
+        path: file.path,
+        language: file.language,
+        size_bytes: file.size,
+        content_hash: null,
+        role: file.role,
+      })),
+    );
     const job = await createAnalysisJob(database, repository.id);
 
     return Response.json(
