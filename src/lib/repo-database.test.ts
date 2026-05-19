@@ -4,9 +4,14 @@ import {
   AppDatabaseError,
   createAnalysisJob,
   createRepoDatabase,
+  deleteGraphEdges,
+  findLatestCompletedAnalysisJob,
+  findRepositoryByOwnerName,
   getRepoDatabase,
   insertChatMessage,
   insertGraphEdges,
+  listGraphNodes,
+  listRepoFiles,
   updateAnalysisJob,
   upsertFiles,
   upsertGraphNodes,
@@ -22,6 +27,11 @@ class FakeQueryBuilder {
   calls: Array<{ method: string; payload?: unknown; options?: unknown }> = [];
 
   constructor(private readonly result: QueryResult) {}
+
+  delete() {
+    this.calls.push({ method: "delete" });
+    return this;
+  }
 
   insert(payload: unknown) {
     this.calls.push({ method: "insert", payload });
@@ -43,9 +53,24 @@ class FakeQueryBuilder {
     return this;
   }
 
+  limit(payload: number) {
+    this.calls.push({ method: "limit", payload });
+    return this;
+  }
+
+  order(payload: string, options?: unknown) {
+    this.calls.push({ method: "order", payload, options });
+    return this;
+  }
+
   select(payload?: unknown) {
     this.calls.push({ method: "select", payload });
     return this;
+  }
+
+  maybeSingle() {
+    this.calls.push({ method: "maybeSingle" });
+    return Promise.resolve(this.result);
   }
 
   single() {
@@ -78,6 +103,41 @@ class FakeSupabaseClient {
 }
 
 describe("repo database helpers", () => {
+  it("finds repositories by owner and name for cache checks", async () => {
+    const client = new FakeSupabaseClient({
+      repos: {
+        data: {
+          id: "repo-uuid",
+          owner: "vercel",
+          name: "next.js",
+          url: "https://github.com/vercel/next.js",
+        },
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    const repo = await findRepositoryByOwnerName(database, "vercel", "next.js");
+
+    expect(repo?.id).toBe("repo-uuid");
+    expect(client.builders.repos.calls).toEqual([
+      { method: "select", payload: "*" },
+      { method: "eq", payload: { column: "owner", value: "vercel" } },
+      { method: "eq", payload: { column: "name", value: "next.js" } },
+      { method: "maybeSingle" },
+    ]);
+  });
+
+  it("returns null when a cache lookup has no repository row", async () => {
+    const client = new FakeSupabaseClient({
+      repos: {
+        data: null,
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    await expect(findRepositoryByOwnerName(database, "vercel", "next.js")).resolves.toBeNull();
+  });
+
   it("upserts repositories by owner and name", async () => {
     const client = new FakeSupabaseClient({
       repos: {
@@ -142,6 +202,33 @@ describe("repo database helpers", () => {
     ]);
   });
 
+  it("finds the latest completed analysis job for a repository", async () => {
+    const client = new FakeSupabaseClient({
+      analysis_jobs: {
+        data: {
+          id: "job-uuid",
+          repo_id: "repo-uuid",
+          status: "completed",
+          error_message: null,
+          completed_at: "2026-05-18T20:01:00.000Z",
+        },
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    const job = await findLatestCompletedAnalysisJob(database, "repo-uuid");
+
+    expect(job?.id).toBe("job-uuid");
+    expect(client.builders.analysis_jobs.calls).toEqual([
+      { method: "select", payload: "*" },
+      { method: "eq", payload: { column: "repo_id", value: "repo-uuid" } },
+      { method: "eq", payload: { column: "status", value: "completed" } },
+      { method: "order", payload: "created_at", options: { ascending: false } },
+      { method: "limit", payload: 1 },
+      { method: "maybeSingle" },
+    ]);
+  });
+
   it("updates analysis job status fields", async () => {
     const client = new FakeSupabaseClient({
       analysis_jobs: {
@@ -174,6 +261,23 @@ describe("repo database helpers", () => {
       { method: "eq", payload: { column: "id", value: "job-uuid" } },
       { method: "select", payload: "*" },
       { method: "single" },
+    ]);
+  });
+
+  it("lists repository files for cache checks", async () => {
+    const client = new FakeSupabaseClient({
+      files: {
+        data: [{ id: "file-uuid", repo_id: "repo-uuid", path: "app/page.tsx" }],
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    await expect(listRepoFiles(database, "repo-uuid")).resolves.toEqual([
+      { id: "file-uuid", repo_id: "repo-uuid", path: "app/page.tsx" },
+    ]);
+    expect(client.builders.files.calls).toEqual([
+      { method: "select", payload: "*" },
+      { method: "eq", payload: { column: "repo_id", value: "repo-uuid" } },
     ]);
   });
 
@@ -216,6 +320,23 @@ describe("repo database helpers", () => {
     ]);
   });
 
+  it("lists graph nodes for cache checks", async () => {
+    const client = new FakeSupabaseClient({
+      graph_nodes: {
+        data: [{ id: "node-uuid", repo_id: "repo-uuid", path: "app/page.tsx" }],
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    await expect(listGraphNodes(database, "repo-uuid")).resolves.toEqual([
+      { id: "node-uuid", repo_id: "repo-uuid", path: "app/page.tsx" },
+    ]);
+    expect(client.builders.graph_nodes.calls).toEqual([
+      { method: "select", payload: "*" },
+      { method: "eq", payload: { column: "repo_id", value: "repo-uuid" } },
+    ]);
+  });
+
   it("upserts graph nodes by repo and path", async () => {
     const client = new FakeSupabaseClient({
       graph_nodes: {
@@ -251,6 +372,22 @@ describe("repo database helpers", () => {
         options: { onConflict: "repo_id,path" },
       },
       { method: "select", payload: "*" },
+    ]);
+  });
+
+  it("deletes existing graph edges before inserting a rebuilt graph", async () => {
+    const client = new FakeSupabaseClient({
+      graph_edges: {
+        data: null,
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    await deleteGraphEdges(database, "repo-uuid");
+
+    expect(client.builders.graph_edges.calls).toEqual([
+      { method: "delete" },
+      { method: "eq", payload: { column: "repo_id", value: "repo-uuid" } },
     ]);
   });
 

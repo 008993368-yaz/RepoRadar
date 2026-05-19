@@ -1,14 +1,8 @@
+import { analyzeRepository, AnalysisPipelineError } from "@/lib/analysis-service";
 import { createApiError, createApiSuccess } from "@/lib/api-response";
-import { selectImportantFiles } from "@/lib/file-selection";
-import { createGitHubClient, GitHubApiError, type GitHubApiErrorCode } from "@/lib/github-client";
+import { GitHubApiError, type GitHubApiErrorCode } from "@/lib/github-client";
 import { GitHubRepoInputError, parseGitHubRepoInput } from "@/lib/github-url";
-import {
-  AppDatabaseError,
-  createAnalysisJob,
-  getRepoDatabase,
-  upsertFiles,
-  upsertRepository,
-} from "@/lib/repo-database";
+import { AppDatabaseError } from "@/lib/repo-database";
 
 type AnalyzeRequestBody = {
   repoUrl?: unknown;
@@ -31,45 +25,10 @@ export async function POST(request: Request) {
       throw new GitHubRepoInputError();
     }
 
-    const repo = parseGitHubRepoInput(body.repoUrl);
-    const github = createGitHubClient();
-    const githubRepository = await github.fetchRepository(repo.owner, repo.repo);
-    const readme = await github.fetchReadme(repo.owner, repo.repo);
-    const tree = await github.fetchFileTree(repo.owner, repo.repo, githubRepository.defaultBranch);
-    const selectedFiles = selectImportantFiles(tree);
-    const database = getRepoDatabase();
-    const repository = await upsertRepository(database, {
-      owner: githubRepository.owner,
-      name: githubRepository.name,
-      url: githubRepository.url,
-      description: githubRepository.description,
-      default_branch: githubRepository.defaultBranch,
-      primary_language: githubRepository.primaryLanguage,
-      stars: githubRepository.stars,
-      forks: githubRepository.forks,
-      license: githubRepository.license,
-      readme,
-    });
-    await upsertFiles(
-      database,
-      selectedFiles.map((file) => ({
-        repo_id: repository.id,
-        path: file.path,
-        language: file.language,
-        size_bytes: file.size,
-        content_hash: null,
-        role: file.role,
-      })),
-    );
-    const job = await createAnalysisJob(database, repository.id);
+    parseGitHubRepoInput(body.repoUrl);
+    const analysis = await analyzeRepository(body.repoUrl);
 
-    return Response.json(
-      createApiSuccess({
-        repoId: repository.id,
-        jobId: job.id,
-        status: job.status,
-      }),
-    );
+    return Response.json(createApiSuccess(analysis));
   } catch (error) {
     if (error instanceof GitHubRepoInputError) {
       return Response.json(createApiError(error.code, error.message), { status: 400 });
@@ -79,6 +38,16 @@ export async function POST(request: Request) {
       return Response.json(createApiError(error.code, error.message), {
         status: githubErrorStatus(error.code),
       });
+    }
+
+    if (error instanceof AnalysisPipelineError) {
+      return Response.json(
+        createApiError(error.code, error.message, {
+          repoId: error.repoId,
+          jobId: error.jobId,
+        }),
+        { status: 500 },
+      );
     }
 
     if (error instanceof AppDatabaseError) {
