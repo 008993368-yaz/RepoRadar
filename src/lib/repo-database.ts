@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 
-type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 export type AnalysisJobStatus = "queued" | "running" | "completed" | "failed";
 export type ChatMessageRole = "user" | "assistant";
@@ -127,11 +127,15 @@ type SupabaseQueryResult<TData> = PromiseLike<{
 }>;
 
 type SupabaseQueryBuilder<TData> = {
+  delete(): SupabaseQueryBuilder<TData>;
   insert(payload: unknown): SupabaseQueryBuilder<TData>;
   upsert(payload: unknown, options?: unknown): SupabaseQueryBuilder<TData>;
   update(payload: unknown): SupabaseQueryBuilder<TData>;
   eq(column: string, value: unknown): SupabaseQueryBuilder<TData>;
+  limit(count: number): SupabaseQueryBuilder<TData>;
+  order(column: string, options?: unknown): SupabaseQueryBuilder<TData>;
   select(columns?: string): SupabaseQueryBuilder<TData>;
+  maybeSingle(): SupabaseQueryResult<TData>;
   single(): SupabaseQueryResult<TData>;
 } & PromiseLike<{
   data?: TData | null;
@@ -193,6 +197,21 @@ export async function upsertRepository(
   );
 }
 
+export async function findRepositoryByOwnerName(
+  database: RepoDatabase,
+  owner: string,
+  name: string,
+): Promise<RepoRow | null> {
+  return executeMaybeSingle<RepoRow>(
+    database.client
+      .from<RepoRow>("repos")
+      .select("*")
+      .eq("owner", owner)
+      .eq("name", name)
+      .maybeSingle(),
+  );
+}
+
 export async function createAnalysisJob(
   database: RepoDatabase,
   repoId: string,
@@ -203,6 +222,22 @@ export async function createAnalysisJob(
       .insert({ repo_id: repoId, status: "queued" })
       .select("*")
       .single(),
+  );
+}
+
+export async function findLatestCompletedAnalysisJob(
+  database: RepoDatabase,
+  repoId: string,
+): Promise<AnalysisJobRow | null> {
+  return executeMaybeSingle<AnalysisJobRow>(
+    database.client
+      .from<AnalysisJobRow>("analysis_jobs")
+      .select("*")
+      .eq("repo_id", repoId)
+      .eq("status", "completed")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   );
 }
 
@@ -225,6 +260,12 @@ export async function updateAnalysisJob(
   );
 }
 
+export async function listRepoFiles(database: RepoDatabase, repoId: string): Promise<FileRow[]> {
+  return executeList<FileRow>(
+    database.client.from<FileRow[]>("files").select("*").eq("repo_id", repoId),
+  );
+}
+
 export async function upsertFiles(
   database: RepoDatabase,
   files: FileInsert[],
@@ -237,6 +278,15 @@ export async function upsertFiles(
   );
 }
 
+export async function listGraphNodes(
+  database: RepoDatabase,
+  repoId: string,
+): Promise<GraphNodeRow[]> {
+  return executeList<GraphNodeRow>(
+    database.client.from<GraphNodeRow[]>("graph_nodes").select("*").eq("repo_id", repoId),
+  );
+}
+
 export async function upsertGraphNodes(
   database: RepoDatabase,
   nodes: GraphNodeInsert[],
@@ -246,6 +296,12 @@ export async function upsertGraphNodes(
       .from<GraphNodeRow[]>("graph_nodes")
       .upsert(nodes, { onConflict: "repo_id,path" })
       .select("*"),
+  );
+}
+
+export async function deleteGraphEdges(database: RepoDatabase, repoId: string): Promise<void> {
+  await executeMutation(
+    database.client.from("graph_edges").delete().eq("repo_id", repoId),
   );
 }
 
@@ -277,6 +333,18 @@ async function executeSingle<TRow>(query: SupabaseQueryResult<TRow>): Promise<TR
   return data;
 }
 
+async function executeMaybeSingle<TRow>(
+  query: SupabaseQueryResult<TRow>,
+): Promise<TRow | null> {
+  const { data, error } = await query;
+
+  if (error) {
+    throw new AppDatabaseError("database_error", "Unable to persist repository analysis data.");
+  }
+
+  return data ?? null;
+}
+
 async function executeList<TRow>(query: SupabaseQueryResult<TRow[]>): Promise<TRow[]> {
   const { data, error } = await query;
 
@@ -285,4 +353,12 @@ async function executeList<TRow>(query: SupabaseQueryResult<TRow[]>): Promise<TR
   }
 
   return data;
+}
+
+async function executeMutation(query: SupabaseQueryResult<unknown>): Promise<void> {
+  const { error } = await query;
+
+  if (error) {
+    throw new AppDatabaseError("database_error", "Unable to persist repository analysis data.");
+  }
 }

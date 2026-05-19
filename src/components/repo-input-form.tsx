@@ -10,7 +10,7 @@ import { GitHubRepoInputError, parseGitHubRepoInput } from "@/lib/github-url";
 type AnalyzeResponseData = {
   repoId: string;
   jobId: string;
-  status: "queued";
+  status: "queued" | "running" | "completed" | "failed";
 };
 
 const exampleRepos = ["vercel/next.js", "facebook/react", "supabase/supabase"];
