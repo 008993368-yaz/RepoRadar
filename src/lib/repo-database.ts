@@ -121,6 +121,28 @@ export type ChatMessageInsert = {
   citations?: Json;
 };
 
+export type AnalysisOutputRow = {
+  id: string;
+  repo_id: string;
+  analysis_job_id: string;
+  repo_summary: string;
+  architecture_overview: string;
+  learning_path: Json;
+  suggested_tasks: Json;
+  metadata: Json;
+  created_at: string;
+};
+
+export type AnalysisOutputInsert = {
+  repo_id: string;
+  analysis_job_id: string;
+  repo_summary: string;
+  architecture_overview: string;
+  learning_path?: Json;
+  suggested_tasks?: Json;
+  metadata?: Json;
+};
+
 type SupabaseQueryResult<TData> = PromiseLike<{
   data?: TData | null;
   error?: { message: string } | null;
@@ -320,6 +342,30 @@ export async function insertChatMessage(
 ): Promise<ChatMessageRow> {
   return executeSingle<ChatMessageRow>(
     database.client.from<ChatMessageRow>("chat_messages").insert(message).select("*").single(),
+  );
+}
+
+export async function insertAnalysisOutput(
+  database: RepoDatabase,
+  output: AnalysisOutputInsert,
+): Promise<AnalysisOutputRow> {
+  return executeSingle<AnalysisOutputRow>(
+    database.client.from<AnalysisOutputRow>("analysis_outputs").insert(output).select("*").single(),
+  );
+}
+
+export async function findLatestAnalysisOutput(
+  database: RepoDatabase,
+  repoId: string,
+): Promise<AnalysisOutputRow | null> {
+  return executeMaybeSingle<AnalysisOutputRow>(
+    database.client
+      .from<AnalysisOutputRow>("analysis_outputs")
+      .select("*")
+      .eq("repo_id", repoId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   );
 }
 

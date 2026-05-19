@@ -7,6 +7,7 @@ import type {
   FileRow,
   GraphNodeInsert,
   GraphNodeRow,
+  Json,
   RepoDatabase,
   RepoRow,
 } from "./repo-database";
@@ -101,7 +102,7 @@ describe("analysis service", () => {
     fetchRawFileContent: vi.fn(),
   };
   const summarizer = {
-    summarizeFiles: vi.fn(),
+    generateAnalysis: vi.fn(),
   };
   const repoStore = {
     findRepositoryByOwnerName: vi.fn(),
@@ -115,6 +116,7 @@ describe("analysis service", () => {
     upsertGraphNodes: vi.fn(),
     deleteGraphEdges: vi.fn(),
     insertGraphEdges: vi.fn(),
+    insertAnalysisOutput: vi.fn(),
   };
 
   beforeEach(() => {
@@ -139,13 +141,24 @@ describe("analysis service", () => {
         return "# next.js";
       },
     );
-    summarizer.summarizeFiles.mockResolvedValue(
-      new Map([
+    summarizer.generateAnalysis.mockResolvedValue({
+      fileSummaries: new Map([
         ["README.md", "Readme summary"],
         ["src/app/page.tsx", "Page summary"],
         ["src/app/header.tsx", "Header summary"],
       ]),
-    );
+      repoSummary: "Repo summary referencing README.md and src/app/page.tsx",
+      architectureOverview: "Architecture overview referencing src/app/page.tsx",
+      learningPath: ["Read README.md", "Read src/app/page.tsx"],
+      suggestedTasks: [
+        {
+          title: "Add page tests",
+          reason: "src/app/page.tsx is an entry point.",
+          paths: ["src/app/page.tsx"],
+        },
+      ],
+      metadata: { provider: "mock" },
+    });
     repoStore.findRepositoryByOwnerName.mockResolvedValue(null);
     repoStore.findLatestCompletedAnalysisJob.mockResolvedValue(null);
     repoStore.listRepoFiles.mockResolvedValue([]);
@@ -166,6 +179,23 @@ describe("analysis service", () => {
     );
     repoStore.deleteGraphEdges.mockResolvedValue(undefined);
     repoStore.insertGraphEdges.mockResolvedValue([]);
+    repoStore.insertAnalysisOutput.mockResolvedValue({
+      id: "output-uuid",
+      repo_id: "repo-uuid",
+      analysis_job_id: "job-uuid",
+      repo_summary: "Repo summary referencing README.md and src/app/page.tsx",
+      architecture_overview: "Architecture overview referencing src/app/page.tsx",
+      learning_path: ["Read README.md", "Read src/app/page.tsx"],
+      suggested_tasks: [
+        {
+          title: "Add page tests",
+          reason: "src/app/page.tsx is an entry point.",
+          paths: ["src/app/page.tsx"],
+        },
+      ],
+      metadata: { provider: "mock" },
+      created_at: "2026-05-18T20:00:00.000Z",
+    });
   });
 
   it("runs the staged analysis, persists content hashes, graph data, and completes the job", async () => {
@@ -235,6 +265,21 @@ describe("analysis service", () => {
         }),
       ]),
     );
+    expect(repoStore.insertAnalysisOutput).toHaveBeenCalledWith(database, {
+      repo_id: "repo-uuid",
+      analysis_job_id: "job-uuid",
+      repo_summary: "Repo summary referencing README.md and src/app/page.tsx",
+      architecture_overview: "Architecture overview referencing src/app/page.tsx",
+      learning_path: ["Read README.md", "Read src/app/page.tsx"],
+      suggested_tasks: [
+        {
+          title: "Add page tests",
+          reason: "src/app/page.tsx is an entry point.",
+          paths: ["src/app/page.tsx"],
+        },
+      ] satisfies Json,
+      metadata: { provider: "mock" },
+    });
     expect(repoStore.updateAnalysisJob).toHaveBeenLastCalledWith(database, "job-uuid", {
       status: "completed",
       error_message: null,
@@ -273,7 +318,7 @@ describe("analysis service", () => {
     expect(github.fetchRepository).not.toHaveBeenCalled();
     expect(github.fetchFileTree).not.toHaveBeenCalled();
     expect(github.fetchRawFileContent).not.toHaveBeenCalled();
-    expect(summarizer.summarizeFiles).not.toHaveBeenCalled();
+    expect(summarizer.generateAnalysis).not.toHaveBeenCalled();
     expect(repoStore.createAnalysisJob).not.toHaveBeenCalled();
   });
 
@@ -319,5 +364,47 @@ describe("analysis service", () => {
       error_message: "Analysis failed while fetching file contents.",
       completed_at: "2026-05-18T20:02:00.000Z",
     });
+  });
+
+  it("stores fallback repo-level analysis output when intelligence generation reports fallback metadata", async () => {
+    summarizer.generateAnalysis.mockResolvedValue({
+      fileSummaries: new Map([
+        ["README.md", "Fallback README summary"],
+        ["src/app/page.tsx", "Fallback page summary"],
+        ["src/app/header.tsx", "Fallback header summary"],
+      ]),
+      repoSummary: "Fallback repo summary referencing README.md",
+      architectureOverview: "Fallback architecture referencing src/app/page.tsx",
+      learningPath: ["Start with README.md"],
+      suggestedTasks: [
+        {
+          title: "Improve README setup notes",
+          reason: "README.md is selected.",
+          paths: ["README.md"],
+        },
+      ],
+      metadata: { provider: "fallback", fallbackReason: "model unavailable" },
+    });
+
+    await expect(
+      analyzeRepository("github.com/vercel/next.js", {
+        database,
+        github,
+        summarizer,
+        repoStore,
+      }),
+    ).resolves.toEqual({
+      repoId: "repo-uuid",
+      jobId: "job-uuid",
+      status: "completed",
+    });
+
+    expect(repoStore.insertAnalysisOutput).toHaveBeenCalledWith(
+      database,
+      expect.objectContaining({
+        repo_summary: "Fallback repo summary referencing README.md",
+        metadata: { provider: "fallback", fallbackReason: "model unavailable" },
+      }),
+    );
   });
 });
