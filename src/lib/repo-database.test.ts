@@ -5,9 +5,11 @@ import {
   createAnalysisJob,
   createRepoDatabase,
   deleteGraphEdges,
+  findLatestAnalysisOutput,
   findLatestCompletedAnalysisJob,
   findRepositoryByOwnerName,
   getRepoDatabase,
+  insertAnalysisOutput,
   insertChatMessage,
   insertGraphEdges,
   listGraphNodes,
@@ -458,6 +460,81 @@ describe("repo database helpers", () => {
       },
       { method: "select", payload: "*" },
       { method: "single" },
+    ]);
+  });
+
+  it("inserts repo-level analysis outputs", async () => {
+    const client = new FakeSupabaseClient({
+      analysis_outputs: {
+        data: {
+          id: "output-uuid",
+          repo_id: "repo-uuid",
+          analysis_job_id: "job-uuid",
+          repo_summary: "Repo summary",
+          architecture_overview: "Architecture overview",
+          learning_path: ["Read README.md"],
+          suggested_tasks: [],
+          metadata: { provider: "fallback" },
+        },
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    await insertAnalysisOutput(database, {
+      repo_id: "repo-uuid",
+      analysis_job_id: "job-uuid",
+      repo_summary: "Repo summary",
+      architecture_overview: "Architecture overview",
+      learning_path: ["Read README.md"],
+      suggested_tasks: [],
+      metadata: { provider: "fallback" },
+    });
+
+    expect(client.builders.analysis_outputs.calls).toEqual([
+      {
+        method: "insert",
+        payload: {
+          repo_id: "repo-uuid",
+          analysis_job_id: "job-uuid",
+          repo_summary: "Repo summary",
+          architecture_overview: "Architecture overview",
+          learning_path: ["Read README.md"],
+          suggested_tasks: [],
+          metadata: { provider: "fallback" },
+        },
+      },
+      { method: "select", payload: "*" },
+      { method: "single" },
+    ]);
+  });
+
+  it("finds the latest repo-level analysis output for dashboard APIs", async () => {
+    const client = new FakeSupabaseClient({
+      analysis_outputs: {
+        data: {
+          id: "output-uuid",
+          repo_id: "repo-uuid",
+          analysis_job_id: "job-uuid",
+          repo_summary: "Repo summary",
+          architecture_overview: "Architecture overview",
+          learning_path: ["Read README.md"],
+          suggested_tasks: [],
+          metadata: {},
+        },
+      },
+    });
+    const database = createRepoDatabase(client);
+
+    await expect(findLatestAnalysisOutput(database, "repo-uuid")).resolves.toMatchObject({
+      id: "output-uuid",
+      repo_summary: "Repo summary",
+    });
+    expect(client.builders.analysis_outputs.calls).toEqual([
+      { method: "select", payload: "*" },
+      { method: "eq", payload: { column: "repo_id", value: "repo-uuid" } },
+      { method: "order", payload: "created_at", options: { ascending: false } },
+      { method: "limit", payload: 1 },
+      { method: "maybeSingle" },
     ]);
   });
 

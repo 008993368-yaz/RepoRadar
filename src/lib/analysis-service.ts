@@ -1,4 +1,8 @@
-import { createFallbackAnalysisSummarizer, type AnalysisSummarizer } from "./analysis-summarizer";
+import {
+  createAnalysisIntelligenceService,
+  type AnalysisIntelligenceResult,
+  type AnalysisIntelligenceService,
+} from "./analysis-summarizer";
 import { createContentHash, selectImportantFiles, type SelectedFile } from "./file-selection";
 import { buildRepositoryGraph, type GraphEngineFile, type ReactFlowGraphEdge, type ReactFlowGraphNode } from "./graph-engine";
 import { createGitHubClient } from "./github-client";
@@ -10,6 +14,7 @@ import {
   findRepositoryByOwnerName,
   getRepoDatabase,
   insertGraphEdges,
+  insertAnalysisOutput,
   listGraphNodes,
   listRepoFiles,
   updateAnalysisJob,
@@ -17,6 +22,7 @@ import {
   upsertGraphNodes,
   upsertRepository,
   type AnalysisJobStatus,
+  type AnalysisOutputInsert,
   type FileInsert,
   type FileRow,
   type GraphEdgeInsert,
@@ -40,6 +46,7 @@ type RepoStore = {
   upsertGraphNodes: typeof upsertGraphNodes;
   deleteGraphEdges: typeof deleteGraphEdges;
   insertGraphEdges: typeof insertGraphEdges;
+  insertAnalysisOutput: typeof insertAnalysisOutput;
 };
 
 export type AnalyzeRepositoryResult = {
@@ -65,7 +72,7 @@ export class AnalysisPipelineError extends Error {
 type AnalyzeRepositoryOptions = {
   database?: RepoDatabase;
   github?: GitHubClient;
-  summarizer?: AnalysisSummarizer;
+  summarizer?: AnalysisIntelligenceService;
   repoStore?: RepoStore;
   now?: () => Date;
 };
@@ -88,6 +95,7 @@ const defaultRepoStore: RepoStore = {
   upsertGraphNodes,
   deleteGraphEdges,
   insertGraphEdges,
+  insertAnalysisOutput,
 };
 
 export async function analyzeRepository(
@@ -97,7 +105,7 @@ export async function analyzeRepository(
   const parsedRepo = parseGitHubRepoInput(repoUrl);
   const database = options.database ?? getRepoDatabase();
   const github = options.github ?? createGitHubClient();
-  const summarizer = options.summarizer ?? createFallbackAnalysisSummarizer();
+  const summarizer = options.summarizer ?? createAnalysisIntelligenceService();
   const repoStore = options.repoStore ?? defaultRepoStore;
   const now = options.now ?? (() => new Date());
 
@@ -150,9 +158,9 @@ export async function analyzeRepository(
       repoStore,
       now,
     );
-    const summaries = await runStage(
+    const intelligence = await runStage(
       "generating summaries",
-      () => summarizer.summarizeFiles({ repository, readme, files }),
+      () => summarizer.generateAnalysis({ repository, readme, files }),
       repoRow.id,
       job.id,
       database,
@@ -161,7 +169,7 @@ export async function analyzeRepository(
     );
     const storedFiles = await runStage(
       "storing selected files",
-      () => repoStore.upsertFiles(database, toFileInserts(repoRow.id, files, summaries)),
+      () => repoStore.upsertFiles(database, toFileInserts(repoRow.id, files, intelligence.fileSummaries)),
       repoRow.id,
       job.id,
       database,
@@ -170,7 +178,12 @@ export async function analyzeRepository(
     );
     const graph = await runStage(
       "building graph",
-      () => Promise.resolve(buildRepositoryGraph({ files: withStoredFileIds(files, storedFiles, summaries) })),
+      () =>
+        Promise.resolve(
+          buildRepositoryGraph({
+            files: withStoredFileIds(files, storedFiles, intelligence.fileSummaries),
+          }),
+        ),
       repoRow.id,
       job.id,
       database,
@@ -195,6 +208,15 @@ export async function analyzeRepository(
           toGraphEdgeInserts(repoRow.id, graph.edges, graphNodes),
         );
       },
+      repoRow.id,
+      job.id,
+      database,
+      repoStore,
+      now,
+    );
+    await runStage(
+      "storing analysis output",
+      () => repoStore.insertAnalysisOutput(database, toAnalysisOutputInsert(repoRow.id, job.id, intelligence)),
       repoRow.id,
       job.id,
       database,
@@ -399,6 +421,22 @@ function toGraphEdgeInserts(
   }
 
   return inserts;
+}
+
+function toAnalysisOutputInsert(
+  repoId: string,
+  jobId: string,
+  intelligence: AnalysisIntelligenceResult,
+): AnalysisOutputInsert {
+  return {
+    repo_id: repoId,
+    analysis_job_id: jobId,
+    repo_summary: intelligence.repoSummary,
+    architecture_overview: intelligence.architectureOverview,
+    learning_path: intelligence.learningPath,
+    suggested_tasks: intelligence.suggestedTasks,
+    metadata: intelligence.metadata,
+  };
 }
 
 function compactJsonObject(input: Record<string, Json | undefined>): Record<string, Json> {
