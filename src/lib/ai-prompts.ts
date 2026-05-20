@@ -79,6 +79,27 @@ export const suggestedTasksSchema = {
   additionalProperties: false,
 } as const;
 
+export const repoChatAnswerSchema = {
+  type: "object",
+  properties: {
+    answer: { type: "string" },
+    citations: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          path: { type: "string" },
+          reason: { type: "string" },
+        },
+        required: ["path", "reason"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["answer", "citations"],
+  additionalProperties: false,
+} as const;
+
 export function createFileSummaryPrompt(input: {
   repository: GitHubRepository;
   readme: string | null;
@@ -120,6 +141,16 @@ export function createBeginnerTasksPrompt(context: string): PromptRequest {
     input: context,
     schemaName: "beginner_tasks",
     schema: suggestedTasksSchema,
+  };
+}
+
+export function createRepoChatPrompt(context: string): PromptRequest {
+  return {
+    instructions:
+      "Use only the provided repository context to answer the user's question. If the context is insufficient, say what is missing instead of guessing. Always cite only real file paths from the context, and include a short reason for each citation.",
+    input: context,
+    schemaName: "repo_chat_answer",
+    schema: repoChatAnswerSchema,
   };
 }
 

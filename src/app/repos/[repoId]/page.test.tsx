@@ -98,6 +98,21 @@ vi.mock("@/lib/repo-database", async (importOriginal) => {
   };
 });
 
+vi.mock("@/components/repo-chat-panel", () => ({
+  RepoChatPanel: ({ repoId }: { repoId: string }) => (
+    <section aria-label="Repo chat panel">Repo chat for {repoId}</section>
+  ),
+}));
+
+vi.mock("@/components/graph/repo-graph-panel", () => ({
+  RepoGraphPanel: ({ repoId }: { repoId: string }) => (
+    <section aria-label="Repository graph panel">
+      <h2>Repository dependency map</h2>
+      Graph for {repoId}
+    </section>
+  ),
+}));
+
 import RepoDashboardPage from "./page";
 
 describe("RepoDashboardPage", () => {
@@ -122,6 +137,7 @@ describe("RepoDashboardPage", () => {
     expect(screen.getByText("Document local setup")).toBeInTheDocument();
     expect(screen.getByText("Start with README.md")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Repository dependency map" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Repo chat panel")).toHaveTextContent("Repo chat for repo-uuid");
   });
 
   it("shows an in-progress state when analysis has not produced output yet", async () => {
@@ -133,6 +149,7 @@ describe("RepoDashboardPage", () => {
 
     expect(screen.getByRole("heading", { name: "vercel/next.js" })).toBeInTheDocument();
     expect(screen.getByText("Analysis is still running.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Repo chat panel")).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View analysis status" })).toHaveAttribute(
       "href",
       "/repos/repo-uuid/status",
@@ -152,5 +169,6 @@ describe("RepoDashboardPage", () => {
 
     expect(screen.getByText("Analysis failed")).toBeInTheDocument();
     expect(screen.getByText("Analysis failed while generating summaries.")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Repo chat panel")).not.toBeInTheDocument();
   });
 });

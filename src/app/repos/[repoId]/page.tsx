@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { RepoGraphPanel } from "@/components/graph/repo-graph-panel";
+import { RepoChatPanel } from "@/components/repo-chat-panel";
 import { Card, CardDescription, CardHeader, CardTitle, ErrorState } from "@/components/ui";
 import { mapDashboardData, type RepoDashboardData } from "@/lib/dashboard-api";
 import {
@@ -171,6 +172,8 @@ function Dashboard({ data }: { data: RepoDashboardData }) {
       </section>
 
       <RepoGraphPanel repoId={data.repo.id} />
+
+      <RepoChatPanel repoId={data.repo.id} />
 
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
         <Card>

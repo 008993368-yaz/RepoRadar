@@ -47,6 +47,7 @@ type OpenAiProviderOptions = {
 type OpenAiResponse = {
   status?: string;
   output_text?: unknown;
+  output?: unknown;
   incomplete_details?: {
     reason?: unknown;
   } | null;
@@ -111,12 +112,13 @@ export function createOpenAiProvider(options: OpenAiProviderOptions = {}): AiPro
         );
       }
 
-      if (typeof payload.output_text !== "string" || payload.output_text.trim() === "") {
+      const outputText = extractOutputText(payload);
+      if (!outputText) {
         throw new AiProviderError("missing_output", "OpenAI response did not contain output text.");
       }
 
       try {
-        return JSON.parse(payload.output_text) as TValue;
+        return JSON.parse(outputText) as TValue;
       } catch (error) {
         throw new AiProviderError(
           "invalid_json",
@@ -126,6 +128,37 @@ export function createOpenAiProvider(options: OpenAiProviderOptions = {}): AiPro
       }
     },
   };
+}
+
+function extractOutputText(payload: OpenAiResponse): string | null {
+  if (typeof payload.output_text === "string" && payload.output_text.trim() !== "") {
+    return payload.output_text;
+  }
+
+  if (!Array.isArray(payload.output)) {
+    return null;
+  }
+
+  for (const item of payload.output) {
+    if (!isRecord(item) || !Array.isArray(item.content)) {
+      continue;
+    }
+
+    for (const content of item.content) {
+      if (!isRecord(content)) {
+        continue;
+      }
+      if (
+        (content.type === "output_text" || content.type === "text") &&
+        typeof content.text === "string" &&
+        content.text.trim() !== ""
+      ) {
+        return content.text;
+      }
+    }
+  }
+
+  return null;
 }
 
 export function createFallbackAiProvider(): AiProvider {
@@ -142,4 +175,8 @@ async function safeReadText(response: { text(): Promise<string> }): Promise<stri
   } catch {
     return null;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
 }

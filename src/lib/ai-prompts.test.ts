@@ -5,6 +5,8 @@ import {
   buildRepositoryPromptContext,
   createBeginnerTasksPrompt,
   createFileSummaryPrompt,
+  createRepoChatPrompt,
+  repoChatAnswerSchema,
   suggestedTasksSchema,
 } from "./ai-prompts";
 
@@ -129,5 +131,17 @@ describe("AI prompt helpers", () => {
     expect(context).toContain("Question: What file should I read first?");
     expect(context).toContain("Repo summary");
     expect(context).toContain("src/app/page.tsx");
+  });
+
+  it("creates repo chat prompts with grounded instructions and citation schema", () => {
+    const prompt = createRepoChatPrompt("Repo chat context");
+
+    expect(prompt.instructions).toContain("Use only the provided repository context");
+    expect(prompt.instructions).toContain("cite");
+    expect(prompt.input).toBe("Repo chat context");
+    expect(prompt.schemaName).toBe("repo_chat_answer");
+    expect(prompt.schema).toBe(repoChatAnswerSchema);
+    expect(repoChatAnswerSchema.required).toEqual(["answer", "citations"]);
+    expect(repoChatAnswerSchema.properties.citations.items.required).toEqual(["path", "reason"]);
   });
 });
