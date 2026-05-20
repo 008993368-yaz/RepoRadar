@@ -31,7 +31,7 @@ export async function GET(_request: Request, context: RepoRouteContext) {
       findLatestAnalysisOutput(database, repoId),
     ]);
 
-    return Response.json(createApiSuccess(mapStatusData({ repoId, job, output })));
+    return Response.json(createApiSuccess(mapStatusData({ repoId, repo, job, output })));
   } catch (error) {
     if (error instanceof AppDatabaseError) {
       return Response.json(createApiError(error.code, error.message), { status: 500 });
