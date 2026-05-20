@@ -90,6 +90,35 @@ describe("OpenAI provider", () => {
     expect(JSON.parse(fetcher.mock.calls[0][1].body).model).toBe("gpt-5.5");
   });
 
+  it("reads structured output text from response message content", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        status: "completed",
+        output: [
+          {
+            type: "message",
+            content: [
+              {
+                type: "output_text",
+                text: "{\"summary\":\"Nested grounded summary\"}",
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const result = await createOpenAiProvider({ fetcher }).generateJson<{ summary: string }>({
+      instructions: "Use only provided context.",
+      input: "content",
+      schemaName: "repo_summary",
+      schema,
+    });
+
+    expect(result).toEqual({ summary: "Nested grounded summary" });
+  });
+
   it("throws a normalized error when the API key is missing", async () => {
     delete process.env.OPENAI_API_KEY;
 
