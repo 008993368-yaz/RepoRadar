@@ -54,6 +54,13 @@ export type RepoGraphData = {
 
 export type RepoStatusData = {
   repoId: string;
+  repo: {
+    id: string;
+    owner: string;
+    name: string;
+    url: string;
+    description: string | null;
+  };
   job: DashboardJob | null;
   isComplete: boolean;
   hasOutput: boolean;
@@ -129,11 +136,19 @@ export function mapDashboardData(input: {
 
 export function mapStatusData(input: {
   repoId: string;
+  repo: RepoRow;
   job: AnalysisJobRow | null;
   output: AnalysisOutputRow | null;
 }): RepoStatusData {
   return {
     repoId: input.repoId,
+    repo: {
+      id: input.repo.id,
+      owner: input.repo.owner,
+      name: input.repo.name,
+      url: input.repo.url,
+      description: input.repo.description,
+    },
     job: input.job ? mapJob(input.job) : null,
     isComplete: input.job?.status === "completed" && Boolean(input.output),
     hasOutput: Boolean(input.output),

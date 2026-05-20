@@ -176,8 +176,15 @@ describe("dashboard API mapping", () => {
   });
 
   it("maps status data with completion flags", () => {
-    expect(mapStatusData({ repoId: "repo-uuid", job: completedJob, output })).toEqual({
+    expect(mapStatusData({ repoId: "repo-uuid", repo, job: completedJob, output })).toEqual({
       repoId: "repo-uuid",
+      repo: {
+        id: "repo-uuid",
+        owner: "vercel",
+        name: "next.js",
+        url: "https://github.com/vercel/next.js",
+        description: "The React Framework",
+      },
       job: {
         id: "job-uuid",
         status: "completed",

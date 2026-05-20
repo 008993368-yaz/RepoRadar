@@ -69,6 +69,13 @@ describe("GET /api/repos/:repoId/status", () => {
       ok: true,
       data: {
         repoId: "repo-uuid",
+        repo: {
+          id: "repo-uuid",
+          owner: "vercel",
+          name: "next.js",
+          url: "https://github.com/vercel/next.js",
+          description: null,
+        },
         job: {
           id: "job-uuid",
           status: "running",
